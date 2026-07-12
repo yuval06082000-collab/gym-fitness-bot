@@ -2,25 +2,16 @@ import base64
 import os
 import requests
 import streamlit as st
-from dotenv import load_dotenv  
-
+from dotenv import load_dotenv
 
 load_dotenv()
 
-# ============================================================
-
-# ============================================================
-API_URL = "https://server.iac.ac.il/api/v1/studentapi/chat/completions"
-
-
+API_URL = "https://server.iac.ac.il/api/v1/studentapi/responses"
 API_KEY = os.getenv("API_KEY")
-
 TRAINER_NAME = "יובל"
 TRAINER_PHONE = "0528775898"
 GYM_NAME = "ST-FITNESS"
 MAX_MESSAGES = 20
-# ============================================================
-# ============================================================
 
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
@@ -39,9 +30,6 @@ SYSTEM_PROMPT = f"""
 - אם רוצים לדבר עם המאמן — אמור ללחוץ על הכפתור למטה
 """
 
-# ============================================================
-#  פונקציות עזר
-# ============================================================
 
 def get_logo_b64():
     if os.path.exists("logo.jpg"):
@@ -51,77 +39,47 @@ def get_logo_b64():
 
 
 def call_api_smart(messages):
-    """
-    פתרון לבועות ריקות / הפסקת תגובה אחרי כמה הודעות:
-    - היסטוריה מינימלית (3 הודעות אחרונות) כדי לא להעמיס
-    - max_tokens גבוה (4000) כדי לתת מקום ל-reasoning tokens + לתשובה עצמה
-    - אם נכשל: ניסיון שני עם רק השאלה האחרונה, בלי היסטוריה בכלל
-    """
-    system = [m for m in messages if m["role"] == "system"]
-    others = [m for m in messages if m["role"] != "system"]
-    recent = system + others[-3:]
+    user_input = messages[-1]["content"] if messages else "היי"
 
     payload = {
-        "model": "gpt-4o-mini",
-        "messages": recent,
-        "max_tokens": 4000
+        "reasoning": {"effort": "low"},
+        "instructions": SYSTEM_PROMPT,
+        "input": user_input
     }
 
     try:
         r = requests.post(API_URL, json=payload, headers=HEADERS, timeout=90)
-        data = r.json()
-        if "choices" in data:
-            content = data["choices"][0]["message"].get("content", "")
-            if content and content.strip():
-                return content.strip()
+        if r.status_code == 200:
+            data = r.json()
+            bot_reply = data.get("output") or data.get("answer") or data
+            if bot_reply:
+                return str(bot_reply).strip()
+        else:
+            return f"❌ שגיאת תקשורת (קוד {r.status_code})"
     except Exception as e:
-        return f"שגיאה: {str(e)[:100]}"
-
-    try:
-        payload["messages"] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            messages[-1]
-        ]
-        r = requests.post(API_URL, json=payload, headers=HEADERS, timeout=90)
-        data = r.json()
-        if "choices" in data:
-            content = data["choices"][0]["message"].get("content", "")
-            if content and content.strip():
-                return content.strip()
-    except Exception as e:
-        return f"שגיאה: {str(e)[:100]}"
+        return f"❌ שגיאה: {str(e)[:50]}"
 
     return "🙏 לא הצלחתי לענות, נסה שוב!"
 
 
 def analyze_image(image_b64, mime, description):
-    """ניתוח תמונה/וידאו שהמתאמן שולח (לדוגמה: תמונת אוכל או תרגיל)"""
     payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": [
-                {"type": "text", "text": description or "תנתח את התמונה מבחינת כושר/תזונה בקצרה"},
-                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}}
-            ]}
-        ],
-        "max_tokens": 4000
+        "reasoning": {"effort": "low"},
+        "instructions": f"{SYSTEM_PROMPT} תנתח את התמונה המצורפת מבחינת כושר ותזונה.",
+        "input": description or "תנתח את התמונה מבחינת כושר/תזונה בקצרה",
+        "image_url": f"data:{mime};base64,{image_b64}"
     }
     try:
         r = requests.post(API_URL, json=payload, headers=HEADERS, timeout=90)
-        data = r.json()
-        if "choices" in data:
-            content = data["choices"][0]["message"].get("content", "")
-            if content and content.strip():
-                return content.strip()
+        if r.status_code == 200:
+            data = r.json()
+            bot_reply = data.get("output") or data.get("answer") or data
+            if bot_reply:
+                return str(bot_reply).strip()
     except Exception:
         pass
     return "לא הצלחתי לנתח את התמונה, נסה שוב 🙏"
 
-
-# ============================================================
-#  UI
-# ============================================================
 
 logo_b64 = get_logo_b64()
 
@@ -146,7 +104,6 @@ st.markdown(f"""
         position: relative; z-index: 1;
         padding: 0 1rem 5rem 1rem !important; max-width: 100% !important;
     }}
-
     .wa-header {{
         background: rgba(20,20,20,0.97); color: white; padding: 12px 16px;
         display: flex; align-items: center; gap: 12px;
@@ -154,7 +111,6 @@ st.markdown(f"""
     }}
     .wa-name {{ font-weight: bold; font-size: 16px; }}
     .wa-status {{ font-size: 12px; color: #e74c3c; }}
-
     .chat-wrap {{ background: rgba(236,229,221,0.95); border-radius: 12px; padding: 10px; margin-bottom: 10px; }}
     .msg-user {{
         background: #DCF8C6; padding: 8px 12px; border-radius: 12px 2px 12px 12px;
@@ -171,13 +127,11 @@ st.markdown(f"""
     .msg-time {{ font-size: 11px; color: #999; margin-top: 3px; }}
     .msg-wrapper-user {{ display: flex; justify-content: flex-end; width: 100%; }}
     .msg-wrapper-bot  {{ display: flex; justify-content: flex-start; width: 100%; }}
-
     .thinking-box {{
         background: white; padding: 10px 16px; margin: 6px auto 6px 0; width: fit-content;
         border-radius: 2px 12px 12px 12px; border-right: 3px solid #c0392b;
         font-weight: bold; color: #c0392b;
     }}
-
     .stButton > button {{
         background: linear-gradient(135deg, #c0392b, #922b21) !important;
         color: white !important; border: none !important; border-radius: 25px !important;
@@ -187,7 +141,6 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# ── State ────────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -200,7 +153,6 @@ if "messages" not in st.session_state:
 if "transferred" not in st.session_state:
     st.session_state.transferred = False
 
-# ── איפוס אוטומטי אחרי הרבה הודעות ──────────────────────
 user_msgs = [m for m in st.session_state.messages if m["role"] == "user"]
 if len(user_msgs) >= MAX_MESSAGES:
     st.session_state.messages = [
@@ -208,7 +160,6 @@ if len(user_msgs) >= MAX_MESSAGES:
         {"role": "assistant", "content": "🔄 התחלנו שיחה טרייה! קדימה, מה השאלה הבאה? 💪🔥"}
     ]
 
-# ── כותרת ────────────────────────────────────────────────
 avatar = (
     f'<img src="data:image/jpeg;base64,{logo_b64}" '
     'style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid #c0392b;">'
@@ -224,7 +175,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── הצגת הודעות ──────────────────────────────────────────
 st.markdown('<div class="chat-wrap">', unsafe_allow_html=True)
 for msg in st.session_state.messages:
     if msg["role"] == "system":
@@ -240,7 +190,6 @@ for msg in st.session_state.messages:
             f'<div class="msg-time">💪 {TRAINER_NAME} | {GYM_NAME}</div></div></div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ── כפתור העברה למאמן ────────────────────────────────────
 if not st.session_state.transferred:
     if st.button("📲 העבר אותי למאמן"):
         st.session_state.transferred = True
@@ -258,7 +207,6 @@ if not st.session_state.transferred:
         })
         st.rerun()
 
-# ── העלאת תמונה / וידאו ──────────────────────────────────
 with st.expander("📸 שלח תמונה או וידאו (אוכל / תרגיל)"):
     uploaded = st.file_uploader(
         "בחר קובץ", type=["jpg", "jpeg", "png", "mp4", "mov"], label_visibility="collapsed"
@@ -281,7 +229,6 @@ with st.expander("📸 שלח תמונה או וידאו (אוכל / תרגיל)
                     mime = "image/jpeg" if uploaded.name.lower().endswith(("jpg", "jpeg")) else "image/png"
                     reply = analyze_image(img_b64, mime, text)
                 else:
-                    # ניתוח וידאו לא נתמך ישירות ע"י ה-API — מבקשים תיאור מפורט במקום
                     reply = call_api_smart(
                         st.session_state.messages + [{
                             "role": "user",
@@ -291,7 +238,6 @@ with st.expander("📸 שלח תמונה או וידאו (אוכל / תרגיל)
             st.session_state.messages.append({"role": "assistant", "content": reply})
             st.rerun()
 
-# ── קלט טקסט ─────────────────────────────────────────────
 if prompt := st.chat_input(f"שאל את {TRAINER_NAME}... 💪"):
     st.session_state.transferred = False
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -308,7 +254,6 @@ if prompt := st.chat_input(f"שאל את {TRAINER_NAME}... 💪"):
     st.session_state.messages.append({"role": "assistant", "content": reply})
     st.rerun()
 
-# ── סיידבר ───────────────────────────────────────────────
 with st.sidebar:
     if logo_b64:
         st.image("logo.jpg", use_container_width=True)
