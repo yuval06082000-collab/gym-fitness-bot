@@ -1,17 +1,25 @@
-import streamlit as st
-import requests
-import os
 import base64
+import os
+import requests
+import streamlit as st
+from dotenv import load_dotenv  
+
+
+load_dotenv()
 
 # ============================================================
 
 # ============================================================
-API_URL       = "https://server.iac.ac.il/api/v1/studentapi/chat/completions"
-API_KEY       = "sk-std-20-L0wIuLBlYzncmfBoYPYQGZHRkG9X3iD7LzglfMkY"
-TRAINER_NAME  = "יובל"
+API_URL = "https://server.iac.ac.il/api/v1/studentapi/chat/completions"
+
+
+API_KEY = os.getenv("API_KEY")
+
+TRAINER_NAME = "יובל"
 TRAINER_PHONE = "0528775898"
-GYM_NAME      = "ST-FITNESS"
-MAX_MESSAGES  = 20
+GYM_NAME = "ST-FITNESS"
+MAX_MESSAGES = 20
+# ============================================================
 # ============================================================
 
 HEADERS = {
